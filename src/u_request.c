@@ -274,7 +274,7 @@ int ulfius_init_request(struct _u_request * request) {
     request->client_address = NULL;
     request->binary_body = NULL;
     request->binary_body_length = 0;
-#ifndef U_DISABLE_WEBSOCKET
+#ifndef U_DISABLE_GNUTLS
     request->client_cert = NULL;
     request->client_cert_file = NULL;
     request->client_key_file = NULL;
@@ -317,7 +317,7 @@ int ulfius_clean_request(struct _u_request * request) {
     request->map_cookie = NULL;
     request->map_post_body = NULL;
     request->binary_body = NULL;
-#ifndef U_DISABLE_WEBSOCKET
+#ifndef U_DISABLE_GNUTLS
     gnutls_x509_crt_deinit(request->client_cert);
     o_free(request->client_cert_file);
     o_free(request->client_key_file);
@@ -419,7 +419,7 @@ int ulfius_copy_request(struct _u_request * dest, const struct _u_request * sour
       }
     }
 
-#ifndef U_DISABLE_WEBSOCKET
+#ifndef U_DISABLE_GNUTLS
     if (ret == U_OK && source->client_cert != NULL) {
       if (gnutls_x509_crt_init(&dest->client_cert) == 0) {
         char * str_cert = ulfius_export_client_certificate_pem(source);
@@ -507,7 +507,7 @@ struct _u_request * ulfius_duplicate_request(const struct _u_request * request) 
         new_request->binary_body = NULL;
       }
       new_request->binary_body_length = request->binary_body_length;
-#ifndef U_DISABLE_WEBSOCKET
+#ifndef U_DISABLE_GNUTLS
       if (request->client_cert != NULL) {
         if (gnutls_x509_crt_init(&new_request->client_cert) == 0) {
           char * str_cert = ulfius_export_client_certificate_pem(request);
@@ -586,7 +586,7 @@ json_t * ulfius_get_json_body_request(const struct _u_request * request, json_er
 }
 #endif
 
-#ifndef U_DISABLE_WEBSOCKET
+#ifndef U_DISABLE_GNUTLS
 /*
  * ulfius_export_client_certificate_pem
  * Exports the client certificate using PEM format
@@ -595,14 +595,27 @@ json_t * ulfius_get_json_body_request(const struct _u_request * request, json_er
  */
 char * ulfius_export_client_certificate_pem(const struct _u_request * request) {
   char * str_cert = NULL;
-  gnutls_datum_t g_cert;
+  size_t cert_size = 0;
+  int err;
 
   if (request != NULL && request->client_cert != NULL) {
-    if (gnutls_x509_crt_export2(request->client_cert, GNUTLS_X509_FMT_PEM, &g_cert) == 0) {
-      str_cert = o_strndup((const char *)g_cert.data, g_cert.size);
-      gnutls_free(g_cert.data);
-    } else {
-      y_log_message(Y_LOG_LEVEL_ERROR, "Ulfius - Error gnutls_x509_crt_export2");
+    err = gnutls_x509_crt_export(request->client_cert, GNUTLS_X509_FMT_PEM, NULL, &cert_size);
+    if (err != GNUTLS_E_SHORT_MEMORY_BUFFER) {
+      y_log_message(Y_LOG_LEVEL_ERROR, "Ulfius - Error gnutls_x509_crt_export");
+      return NULL;
+    }
+
+    str_cert = (char *)o_malloc(cert_size);
+    if (str_cert == NULL) {
+      y_log_message(Y_LOG_LEVEL_ERROR, "Ulfius - Error allocating memory for str_cert");
+      return NULL;
+    }
+
+    err = gnutls_x509_crt_export(request->client_cert, GNUTLS_X509_FMT_PEM, str_cert, &cert_size);
+    if (err != 0) {
+      y_log_message(Y_LOG_LEVEL_ERROR, "Ulfius - Error gnutls_x509_crt_export");
+      o_free(str_cert);
+      return NULL;
     }
   }
 

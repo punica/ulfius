@@ -78,6 +78,23 @@ set(LIB_SRC
     ${SRC_DIR}/yuarel.c
     ${SRC_DIR}/ulfius.c)
 
+# GNU TLS support
+option(WITH_GNUTLS "GNU TLS support" ON)
+
+if (WITH_GNUTLS)
+    include(FindGnuTLS)
+    find_package(GnuTLS REQUIRED)
+    if (GNUTLS_FOUND)
+        set(LIBS ${LIBS} ${GNUTLS_LIBRARIES})
+    endif ()
+endif ()
+
+if (WITH_GNUTLS)
+    set(U_DISABLE_GNUTLS OFF)
+else ()
+    set(U_DISABLE_GNUTLS ON)
+endif ()
+
 # websocket support
 
 option(WITH_WEBSOCKET "Websocket support" ON)
@@ -86,15 +103,15 @@ if (WIN32)
     set(WITH_WEBSOCKET OFF)
 endif ()
 
+# current websocket implementation depends on GNU TLS
+if (NOT WITH_GNUTLS)
+    set(WITH_WEBSOCKET OFF)
+endif ()
+
 if (NOT WITH_WEBSOCKET)
     set(MHD_MIN_VERSION 0.9.51)
 else ()
     set(MHD_MIN_VERSION 0.9.53)
-    include(FindGnuTLS)
-    find_package(GnuTLS REQUIRED)
-    if (GNUTLS_FOUND)
-        set(LIBS ${LIBS} ${GNUTLS_LIBRARIES})
-    endif ()
 endif ()
 
 include(FindMHD)
@@ -230,7 +247,11 @@ endif ()
 
 option(BUILD_UWSC "Build uwsc application." ON)
 
-if (WITH_WEBSOCKET AND BUILD_UWSC)
+if (NOT WITH_WEBSOCKET)
+    set(BUILD_UWSC OFF)
+endif ()
+
+if (BUILD_UWSC)
     add_executable(uwsc ${UWSC_DIR}/uwsc.c ${INC_DIR}/ulfius.h ${INC_DIR}/u_private.h ${PROJECT_BINARY_DIR}/ulfius-cfg.h)
     set_target_properties(uwsc PROPERTIES SKIP_BUILD_RPATH TRUE)
     add_dependencies(uwsc ulfius)
@@ -246,8 +267,11 @@ endif ()
 if (WITH_JANSSON)
   set (PKGCONF_REQ_PRIVATE "${PKGCONF_REQ_PRIVATE}, jansson")
 endif ()
+if (WITH_GNUTLS)
+  set (PKGCONF_REQ_PRIVATE "${PKGCONF_REQ_PRIVATE}, gnutls > 3.5.0")
+endif ()
 if (WITH_WEBSOCKET)
-  set (PKGCONF_REQ_PRIVATE "${PKGCONF_REQ_PRIVATE}, gnutls > 3.5.0, libmicrohttpd > 0.9.53")
+  set (PKGCONF_REQ_PRIVATE "${PKGCONF_REQ_PRIVATE}, libmicrohttpd > 0.9.53")
 else ()
   set (PKGCONF_REQ_PRIVATE "${PKGCONF_REQ_PRIVATE}, libmicrohttpd > 0.9.51")
 endif ()
@@ -390,8 +414,11 @@ endif ()
 if (WITH_JANSSON)
   set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}, libjansson4 (>= 2.1)")
 endif ()
+if (WITH_GNUTLS)
+  set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}, libgnutls30 (>= 3.5.0)")
+endif ()
 if (WITH_WEBSOCKET)
-  set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}, libgnutls30 (>= 3.5.0), libmicrohttpd12 (>= 0.9.53)")
+  set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}, libmicrohttpd12 (>= 0.9.53)")
 else ()
   set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}, libmicrohttpd12 (>= 0.9.51)")
 endif ()
@@ -405,6 +432,7 @@ include(CPack)
 
 add_custom_target(dist_u COMMAND ${CMAKE_MAKE_PROGRAM} package_source)
 
+message(STATUS "GNU TLS support: ${WITH_GNUTLS}")
 message(STATUS "Websocket support: ${WITH_WEBSOCKET}")
 message(STATUS "Outgoing requests support: ${WITH_CURL}")
 message(STATUS "Jansson library support: ${WITH_JANSSON}")
